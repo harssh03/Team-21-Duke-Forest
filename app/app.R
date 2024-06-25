@@ -2,7 +2,7 @@ library(shiny)
 library(ggplot2)
 
 ui <- fluidPage(
-  titlePanel("Data Visualization App"),
+  titlePanel("Duke Forest"),
   sidebarLayout(
     sidebarPanel(
       fileInput('file1', 'Choose CSV File', accept = c('text/csv', 'text/comma-separated-values,text/plain', '.csv')),
@@ -63,5 +63,4 @@ server <- function(input, output, session) {
     }
   })
 }
-
 shinyApp(ui = ui, server = server)
