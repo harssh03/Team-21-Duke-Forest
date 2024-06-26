@@ -1,0 +1,106 @@
+---
+title: "LeafletSetup"
+author: "Caroline"
+date: "2024-06-26"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+#install.packages("leaflet")
+#install.packages("tidyverse")
+#install.packages("leaflet.extras")
+#install.packages("shiny")
+#install.packages("ggplot2")
+
+
+
+library(ggplot2)
+library(leaflet)
+library(tidyverse)
+library(shiny)
+library(leaflet.extras)
+```
+```{r, reading in csv}
+#linetransects <- read.csv("./Data/HerpLineTransects.csv")
+
+#BCdat <- read.csv("./Data/Spring2024Sites.csv")
+
+CTdat <- read.csv("./Data/df_obs_merged.csv")
+```
+```{r, creating a point map}
+CTMap <- leaflet() %>%
+  addTiles() %>%
+  addMarkers(data = CTdat, lng = ~longitude, lat = ~latitude)
+CTMap
+```
+```{r, calculating intensity}
+# Calculate intensity (White.tailed.Deer / days)
+CTdat_intensity <- CTdat %>%
+  mutate(intensity = White.tailed.Deer / days)  
+#control for effort by days deployed
+
+# Aggregate data for heatmap (sum of intensity by lat-long)
+heatmap_data <- CTdat_intensity %>%
+  group_by(longitude, latitude) %>%
+  summarise(intensity_sum = sum(intensity))
+
+```
+```{r, adding a heatmap}
+# Create Leaflet map with heatmap layer
+CTMapheat <- leaflet() %>%
+  addTiles() %>%
+  addHeatmap(data = heatmap_data, lng = ~longitude, lat = ~latitude, intensity = ~intensity_sum, blur = 2, max = 0.05, radius = 15)
+
+CTMapheat
+
+```
+
+```{r, creating a map with point size proportional to deer}
+# Normalize intensity to use it for circle size
+max_intensity <- max(CTdat_intensity$intensity, na.rm = TRUE)
+CTdat_intensity <- CTdat_intensity %>%
+  mutate(size = (intensity / max_intensity) * 20)  # Scale size to a maximum of 20
+
+# Create Leaflet map with circle markers of varying sizes
+CTMapDots <- leaflet(data = CTdat_intensity) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~longitude, 
+    lat = ~latitude, 
+    radius = ~size, 
+    fillOpacity = 0.5, 
+    color = "blue", 
+    stroke = FALSE, 
+    label = ~paste("Intensity:", intensity)
+  )
+
+CTMapDots
+
+```
+
+```{r, bar graph showing deer presence by forest type}
+
+# Sum up the number of deer and days by forest type
+forest_summary <- CTdat %>%
+  group_by(forest_type) %>%
+  summarise(
+    total_deer = sum(White.tailed.Deer, na.rm = TRUE),
+    total_days = sum(days, na.rm = TRUE)
+  )
+
+forest_summary <- forest_summary %>%
+  mutate(foresttypeintensity = total_deer / total_days)
+
+forestdeerplot <- ggplot(data = forest_summary, aes(x = forest_type, y = foresttypeintensity, fill = forest_type)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "Deer Population Intensity by Forest Type",
+       x = "Forest Type",
+       y = "Intensity (White-tailed Deer / days)") +
+  scale_fill_brewer(palette = "Set3")
+
+forestdeerplot
+```
+
