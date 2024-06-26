@@ -1,6 +1,6 @@
 ---
 title: "LeafletGPSdata"
-author: "Caroline"
+author: "Harssh"
 date: "2024-06-26"
 output: html_document
 editor_options: 
@@ -8,19 +8,79 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-install.packages("leaflet")
-install.packages("ggplot2")
-
 library(leaflet)
 library(ggplot2)
+library(dplyr)
 ```
+
 ```{r}
 herpcover <- read.csv("./Data/coverboardwrangling.csv")
 ```
+
 ```{r}
-CoverBoards <- leaflet() %>%
+coverBoardMap <- leaflet() %>%
   addTiles() %>%
   addMarkers(data = herpcover, lng = ~Long, lat = ~Lat)
-CoverBoards
+coverBoardMap
+```
+
+```{r}
+data <- read.csv("./Master.csv")
+```
+
+```{r}
+herpcover_subset <- dplyr::select(herpcover, Transect_ID, lat = Lat, long = Long)
+
+final_dataset <- dplyr::left_join(data, herpcover_subset, by = "Transect_ID")
+```
+
+```{r}
+# Filter out rows where SP_Total is not numeric and convert SP_Total to numeric
+final_dataset <- final_dataset %>%
+  filter(!is.na(as.numeric(SP_Total))) %>%
+  mutate(SP_Total = as.numeric(SP_Total))
+
+# Use SP_Total directly as intensity
+final_dataset <- final_dataset %>%
+  mutate(intensity = SP_Total)
+
+# Aggregate data for heatmap (sum of intensity by lat-long)
+heatmap_data <- final_dataset %>%
+  group_by(long, lat) %>%
+  summarise(intensity_sum = sum(intensity, na.rm = TRUE))
+
+# Debugging: Print the heatmap_data to check the aggregated values
+print(heatmap_data)
+```
+
+```{r}
+# Adjust the heatmap parameters
+heatmap <- leaflet() %>%
+  addTiles() %>%
+  addHeatmap(data = heatmap_data, lng = ~long, lat = ~lat, intensity = ~intensity_sum, blur = 15, max = 1, radius = 20)
+
+heatmap
+```
+
+```{r}
+# Normalize intensity to use it for circle size
+max_intensity <- max(heatmap_data$intensity_sum, na.rm = TRUE)
+heatmap_data <- heatmap_data %>%
+  mutate(size = (intensity_sum / max_intensity) * 30)  # Scale size to a maximum of 20
+
+# Create Leaflet map with circle markers of varying sizes
+circleMap <- leaflet(data = heatmap_data) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~long, 
+    lat = ~lat, 
+    radius = ~size, 
+    fillOpacity = 1, 
+    color = "blue", 
+    stroke = FALSE, 
+    label = ~paste("Intensity:", intensity_sum)
+  )
+
+circleMap
 ```
 
