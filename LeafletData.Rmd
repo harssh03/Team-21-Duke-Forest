@@ -1,0 +1,26 @@
+---
+title: "LeafletGPSdata"
+author: "Caroline"
+date: "2024-06-26"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+install.packages("leaflet")
+install.packages("ggplot2")
+
+library(leaflet)
+library(ggplot2)
+```
+```{r}
+herpcover <- read.csv("./Data/coverboardwrangling.csv")
+```
+```{r}
+CoverBoards <- leaflet() %>%
+  addTiles() %>%
+  addMarkers(data = herpcover, lng = ~Long, lat = ~Lat)
+CoverBoards
+```
+
