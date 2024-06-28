@@ -4,6 +4,8 @@ library(ggplot2)
 library(dplyr)
 library(lubridate)
 library(DT)
+library(viridis)
+library(gridExtra)
 
 # Define UI
 ui <- fluidPage(
@@ -53,6 +55,10 @@ server <- function(input, output, session) {
     }
     
     df <- df %>% filter(Date >= input$dateRange[1] & Date <= input$dateRange[2])
+    
+    # Exclude rows where SP contains "Ant"
+    df <- df %>% filter(!grepl("Ant", SP, ignore.case = TRUE))
+    
     return(df)
   })
   
@@ -61,7 +67,7 @@ server <- function(input, output, session) {
            'Monthly Herp Count' = 'This plot shows the count of herp species observed on a monthly basis.',
            'Transect Herp Count' = 'This plot shows the count of herp species observed per transect.',
            'Effort Calculation' = 'Effort calculation is defined as the number of visits per transect divided by the total sightings of an animal or all animals.',
-           'Trends Analysis' = 'This plot shows the trends in temperature, sky condition, time and types of species found.',
+           'Trends Analysis' = 'This plot shows the trends in temperature, sky condition, and time, and types of species found.',
            'Ants and Herps Correlation' = 'This plot shows the correlation between the counts of ants and herps observed at different transects.')
   })
   
@@ -76,14 +82,17 @@ server <- function(input, output, session) {
     req(filteredData())
     df <- filteredData()
     
+    # Calculate Herp observations based on the requirements
+    df <- df %>%
+      group_by(Response_ID, Date, Transect_ID) %>%
+      summarise(Herp_obs_count = sum(Herp_obs != "No", na.rm = TRUE)) %>%
+      ungroup()
+    
     if (input$plotType == 'Monthly Herp Count') {
       df %>% 
         mutate(month = floor_date(ymd(Date), "month")) %>%
         group_by(month) %>%
-        
-        # Adjust the column name for 'Herp_obs'
-        summarise(herp_count = sum(Herp_obs != "No")) %>%
-        
+        summarise(herp_count = sum(Herp_obs_count)) %>%
         ggplot(aes(x = month, y = herp_count)) +
         geom_line(color="#00539B") +
         labs(title = "Monthly Herp Count", x = "Month", y = "Herp Count") +
@@ -91,52 +100,73 @@ server <- function(input, output, session) {
       
     } else if (input$plotType == 'Transect Herp Count') {
       df %>%
-        
-        # Adjust the column name for 'Transect_ID' and 'Herp_obs'
         group_by(Transect_ID) %>%
-        summarise(herp_count = sum(Herp_obs != "No")) %>%
-        
+        summarise(herp_count = sum(Herp_obs_count)) %>%
         ggplot(aes(x = Transect_ID, y = herp_count, fill = Transect_ID)) +
         geom_bar(stat = "identity") +
         labs(title = "Transect Herp Count", x = "Transect ID", y = "Herp Count") +
         theme_minimal() +
-        scale_fill_manual(values = c("#001A57", "#00539B", "#002E5D"))
+        scale_fill_viridis_d() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
       
     } else if (input$plotType == 'Effort Calculation') {
       df %>%
-        
-        # Adjust the column name for 'Transect_ID' and 'Herp_obs'
         group_by(Transect_ID) %>%
         summarise(visits = n(),
-                  sightings = sum(Herp_obs != "No")) %>%
+                  sightings = sum(Herp_obs_count)) %>%
         mutate(effort = visits / sightings) %>%
-        
         ggplot(aes(x = Transect_ID, y = effort, fill = Transect_ID)) +
         geom_bar(stat = "identity") +
-        labs(title = "Effort Calculation", x = "Transect ID", y = "Effort (Visits per Sightings)") +
+        labs(title = "Effort Calculation", x = "Transect ID", y = "Effort (Sightings per Visit)") +
         theme_minimal() +
-        scale_fill_manual(values = c("#001A57", "#00539B", "#002E5D"))
+        scale_fill_viridis_d() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
       
     } else if (input$plotType == 'Trends Analysis') {
-      df %>%
-        
-        # Adjust the column names for 'Temperature', 'Herp_obs', and 'Sky_condition'
-        ggplot(aes(x = Temperature, y = as.numeric(Herp_obs != "No"), color = Sky_condition)) +
-        geom_point() +
-        labs(title = "Trends Analysis", x = "Temperature", y = "Herp Observations") +
-        theme_minimal() +
-        scale_color_manual(values = c("#001A57", "#00539B", "#002E5D"))
+      # Clean and convert the temperature data
+      if (!"Temperature" %in% names(df)) {
+        stop("Temperature column not found in the dataset.")
+      }
+      
+      if (!"Sky_condition" %in% names(df)) {
+        stop("Sky_condition column not found in the dataset.")
+      }
+      
+      df <- df %>% 
+        mutate(Temperature_Clean = as.numeric(gsub("[^0-9.]", "", Temperature))) %>%
+        filter(!is.na(Temperature_Clean))  # Exclude observations with missing temperature values
+      
+      # Plot 1: Trends in Temperature and Types of Species Found
+      p1 <- df %>%
+        ggplot(aes(x = Temperature_Clean, y = Herp_obs_count)) +
+        geom_point(color = "#00539B") +
+        labs(title = "Trends in Temperature and Types of Species Found", x = "Temperature (F)", y = "Herp Observations") +
+        theme_minimal()
+      
+      # Plot 2: Sky Condition and Types of Species Found
+      p2 <- df %>%
+        ggplot(aes(x = Sky_condition, y = Herp_obs_count)) +
+        geom_point(color = "#00539B") +
+        labs(title = "Sky Condition and Types of Species Found", x = "Sky Condition", y = "Herp Observations") +
+        theme_minimal()
+      
+      # Plot 3: Time and Types of Species Found
+      p3 <- df %>%
+        ggplot(aes(x = Date, y = Herp_obs_count)) +
+        geom_line(color = "#00539B") +
+        labs(title = "Time and Types of Species Found", x = "Date", y = "Herp Observations") +
+        theme_minimal()
+      
+      gridExtra::grid.arrange(p1, p2, p3, ncol = 1)
       
     } else if (input$plotType == 'Ants and Herps Correlation') {
       df %>%
-        
-        # Adjust the column names for 'Herp_obs', 'Ant_obs', and 'Transect_ID'
-        filter(Herp_obs != "No" | Ant_obs != "No") %>%
-        ggplot(aes(x = as.numeric(Herp_obs != "No"), y = as.numeric(Ant_obs != "No"), color = Transect_ID)) +
-        geom_point() +
+        ggplot(aes(x = as.numeric(Herp_obs_count), y = as.numeric(Ant_obs != "No"), color = Transect_ID)) +
+        geom_point(size = 3, alpha = 0.6) +
+        geom_smooth(method = "lm", se = FALSE, color = "black") +
         labs(title = "Ants and Herps Correlation", x = "Herp Observations", y = "Ant Observations") +
         theme_minimal() +
-        scale_color_manual(values = c("#001A57", "#00539B", "#002E5D"))
+        scale_color_viridis_d()
     }
   })
   
